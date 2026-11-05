@@ -17,3 +17,9 @@ reports/generated/
 
 # IDE
 .vscode/
+
+.venv/
+.env
+__pycache__/
+*.pyc
+node_modules/
