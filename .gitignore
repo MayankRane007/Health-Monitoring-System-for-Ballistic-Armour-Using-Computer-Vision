@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Frontend
+node_modules/
+dist/
+
+# Dataset and generated files
+dataset/raw/
+dataset/processed/
+uploads/
+reports/generated/
+
+# IDE
+.vscode/
