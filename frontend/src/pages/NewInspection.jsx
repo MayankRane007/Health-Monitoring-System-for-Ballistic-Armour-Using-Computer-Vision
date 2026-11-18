@@ -1,21 +1,118 @@
-
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  CheckCircle2,
+  ImagePlus,
+  Loader2,
   Shield,
   Upload,
-  ImagePlus,
   X,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
 } from "lucide-react";
 
 import {
+  Alert,
+  Button,
+  Card,
+  Field,
+  PageHeader,
+  StatusBadge,
+} from "../components/ui";
+import { inputClassName } from "../lib/classes";
+import { formatFileSize } from "../lib/format";
+import {
+  createInspection,
   getPanel,
   registerPanel,
-  createInspection,
   uploadInspectionImage,
 } from "../services/api";
+
+const MATERIALS = [
+  "Ceramic",
+  "Composite",
+  "Steel",
+  "Polyethylene",
+  "Other",
+];
+
+function ImageField({
+  id,
+  title,
+  description,
+  image,
+  onSelect,
+  onRemove,
+  disabled,
+  error,
+}) {
+  return (
+    <Card className="p-5">
+      <h3 className="font-semibold">{title}</h3>
+      <p className="mt-1 text-xs text-muted">{description}</p>
+      <p className="mt-1 text-xs text-muted">JPG or PNG · 10 MB maximum</p>
+
+      {image ? (
+        <div className="relative mt-4">
+          <img
+            src={image.preview}
+            alt={`${title} preview`}
+            className="h-56 w-full rounded-lg bg-black/30 object-contain"
+          />
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm text-ink">{image.file.name}</p>
+              <p className="text-xs text-muted">{formatFileSize(image.file.size)}</p>
+            </div>
+            <div className="flex gap-2">
+              <label className="inline-flex cursor-pointer items-center rounded-lg border border-line px-3 py-2 text-xs hover:bg-white/5">
+                Replace
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                  className="sr-only"
+                  disabled={disabled}
+                  onChange={(event) => onSelect(event)}
+                />
+              </label>
+              <Button
+                variant="danger"
+                className="px-3 py-2"
+                disabled={disabled}
+                onClick={onRemove}
+                aria-label={`Remove ${title} image`}
+              >
+                <X size={14} />
+                Remove
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <label
+          htmlFor={id}
+          className={`mt-4 flex h-56 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 text-center ${
+            error ? "border-danger/50" : "border-line hover:border-accent/50"
+          }`}
+        >
+          <ImagePlus size={28} className="mb-3 text-accent" aria-hidden="true" />
+          <span className="text-sm">Choose {title.toLowerCase()} image</span>
+          <span className="mt-1 text-xs text-muted">Accepted: JPEG, PNG</span>
+          <input
+            id={id}
+            type="file"
+            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+            className="sr-only"
+            disabled={disabled}
+            onChange={onSelect}
+          />
+        </label>
+      )}
+      {error ? (
+        <p className="mt-2 text-xs text-danger" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </Card>
+  );
+}
 
 function NewInspection() {
   const [panelId, setPanelId] = useState("");
@@ -23,78 +120,113 @@ function NewInspection() {
   const [manufacturer, setManufacturer] = useState("");
   const [manufactureDate, setManufactureDate] = useState("");
   const [inspectorName, setInspectorName] = useState("");
-
   const [frontImage, setFrontImage] = useState(null);
   const [backImage, setBackImage] = useState(null);
-
+  const [panelLookup, setPanelLookup] = useState({
+    status: "idle",
+    message: "",
+  });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
-  const handleImage = (event, setter) => {
-    const file = event.target.files?.[0];
+  useEffect(() => {
+    return () => {
+      if (frontImage?.preview) URL.revokeObjectURL(frontImage.preview);
+      if (backImage?.preview) URL.revokeObjectURL(backImage.preview);
+    };
+  }, [frontImage, backImage]);
 
+  const assignImage = (event, current, setter, key) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
     if (!file) return;
 
     if (!["image/jpeg", "image/png"].includes(file.type)) {
-      setError("Only JPG, JPEG and PNG images are supported.");
-      event.target.value = "";
+      setFieldErrors((prev) => ({
+        ...prev,
+        [key]: "Only JPG and PNG images are supported.",
+      }));
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      setError("Image size must not exceed 10 MB.");
-      event.target.value = "";
+      setFieldErrors((prev) => ({
+        ...prev,
+        [key]: "Image size must not exceed 10 MB.",
+      }));
       return;
     }
 
-    setter({
-      file,
-      preview: URL.createObjectURL(file),
-    });
-
+    if (current?.preview) URL.revokeObjectURL(current.preview);
+    setter({ file, preview: URL.createObjectURL(file) });
+    setFieldErrors((prev) => ({ ...prev, [key]: "" }));
     setError("");
     setResult(null);
-    event.target.value = "";
   };
 
-  const removeImage = (image, setter) => {
-    if (image?.preview) {
-      URL.revokeObjectURL(image.preview);
+  const lookupPanel = async () => {
+    const id = panelId.trim();
+    if (!id) {
+      setPanelLookup({ status: "idle", message: "" });
+      return;
     }
 
-    setter(null);
-    setResult(null);
+    setPanelLookup({ status: "loading", message: "Checking panel register…" });
+
+    try {
+      const panel = await getPanel(id);
+      setMaterial(panel.material || material);
+      setManufacturer(panel.manufacturer || "");
+      setManufactureDate(
+        panel.manufacture_date ? String(panel.manufacture_date).slice(0, 10) : ""
+      );
+      setPanelLookup({
+        status: "found",
+        message: `Panel ${panel.panel_id} is already registered. A new inspection will be added to it.`,
+      });
+    } catch (err) {
+      const notFound =
+        err.message.toLowerCase().includes("panel not found") ||
+        err.message.toLowerCase().includes("404");
+
+      if (notFound) {
+        setPanelLookup({
+          status: "new",
+          message:
+            "This panel ID is not registered yet. Submitting will register it, then create the inspection.",
+        });
+      } else {
+        setPanelLookup({ status: "error", message: err.message });
+      }
+    }
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-
     setError("");
     setMessage("");
     setResult(null);
 
-    if (!panelId.trim()) {
-      setError("Please enter a Panel ID.");
-      return;
+    const nextErrors = {};
+    if (!panelId.trim()) nextErrors.panelId = "Enter a panel ID.";
+    else if (panelId.trim().length > 50) {
+      nextErrors.panelId = "Panel ID must be 50 characters or fewer.";
     }
-
-    if (!frontImage || !backImage) {
-      setError("Please upload both front and back images.");
-      return;
-    }
+    if (!frontImage) nextErrors.front = "Upload a front image.";
+    if (!backImage) nextErrors.back = "Upload a back image.";
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
 
     setLoading(true);
-
     let inspection = null;
     let frontUploaded = false;
     let backUploaded = false;
 
     try {
-      // Step 1: Check whether the panel already exists
-      setMessage("Checking panel registration...");
-
+      setMessage("Checking panel registration…");
       let panelExists = false;
 
       try {
@@ -111,10 +243,8 @@ function NewInspection() {
         }
       }
 
-      // Step 2: Register the panel if it is new
       if (!panelExists) {
-        setMessage("Registering new armour panel...");
-
+        setMessage("Registering new armour panel…");
         await registerPanel({
           panel_id: panelId.trim(),
           material: material || null,
@@ -123,34 +253,18 @@ function NewInspection() {
         });
       }
 
-      // Step 3: Create inspection
-      setMessage("Creating inspection record...");
-
+      setMessage("Creating inspection record…");
       inspection = await createInspection({
         panel_id: panelId.trim(),
         inspector_name: inspectorName.trim() || null,
       });
 
-      // Step 4: Upload front image
-      setMessage("Uploading front surface image...");
-
-      await uploadInspectionImage(
-        inspection.id,
-        "front",
-        frontImage.file
-      );
-
+      setMessage("Uploading front image…");
+      await uploadInspectionImage(inspection.id, "front", frontImage.file);
       frontUploaded = true;
 
-      // Step 5: Upload back image
-      setMessage("Uploading back surface image...");
-
-      await uploadInspectionImage(
-        inspection.id,
-        "back",
-        backImage.file
-      );
-
+      setMessage("Uploading back image…");
+      await uploadInspectionImage(inspection.id, "back", backImage.file);
       backUploaded = true;
 
       setResult({
@@ -160,7 +274,6 @@ function NewInspection() {
         frontUploaded,
         backUploaded,
       });
-
       setMessage("Inspection record and both images uploaded successfully.");
     } catch (err) {
       setError(
@@ -168,7 +281,6 @@ function NewInspection() {
           ? `Inspection #${inspection.id} was created, but image upload was incomplete: ${err.message}`
           : err.message
       );
-
       if (inspection) {
         setResult({
           inspectionId: inspection.id,
@@ -183,246 +295,224 @@ function NewInspection() {
     }
   };
 
-  const UploadBox = ({ title, description, image, setter }) => (
-    <div className="bg-[#10231b] border border-emerald-900/50 rounded-xl p-5">
-      <h3 className="font-semibold mb-1">{title}</h3>
-      <p className="text-xs text-gray-500 mb-4">{description}</p>
-
-      {image ? (
-        <div className="relative">
-          <img
-            src={image.preview}
-            alt={title}
-            className="w-full h-56 object-contain bg-black/30 rounded-lg"
-          />
-
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => removeImage(image, setter)}
-            className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-lg disabled:opacity-50"
-          >
-            <X size={16} />
-          </button>
-
-          <p className="text-xs text-emerald-400 mt-3 truncate">
-            {image.file.name}
-          </p>
-        </div>
-      ) : (
-        <label className="h-56 flex flex-col items-center justify-center border-2 border-dashed border-emerald-900 rounded-lg cursor-pointer hover:border-emerald-500 transition">
-          <ImagePlus size={34} className="text-emerald-400 mb-3" />
-          <span className="text-sm text-gray-300">
-            Click to upload image
-          </span>
-          <span className="text-xs text-gray-500 mt-2">
-            JPG or PNG · Maximum 10 MB
-          </span>
-
-          <input
-            type="file"
-            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
-            className="hidden"
-            disabled={loading}
-            onChange={(event) => handleImage(event, setter)}
-          />
-        </label>
-      )}
-    </div>
-  );
-
   return (
-    <div className="min-h-screen bg-[#07130f] text-white p-5 md:p-8">
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Capture"
+        title="New inspection"
+        description="Identify or register a panel, add inspector details, then upload front and back photos. The API does not return damage predictions."
+      />
 
-      {/* Heading */}
-      <div className="flex items-center gap-3 mb-7">
-        <div className="p-3 rounded-xl bg-emerald-500/15 text-emerald-400">
-          <Shield size={25} />
-        </div>
-
-        <div>
-          <h1 className="text-2xl font-bold">
-            New Armour Inspection
-          </h1>
-          <p className="text-sm text-gray-400 mt-1">
-            Register a panel and upload inspection images
-          </p>
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-
-        {/* Panel Information */}
-        <section className="bg-[#10231b] border border-emerald-900/50 rounded-xl p-5 md:p-6">
-          <h2 className="font-semibold mb-5">Panel Information</h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
+      <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+        <Card className="p-5 md:p-6">
+          <div className="mb-5 flex items-center gap-3">
+            <div className="rounded-xl bg-accent/10 p-2.5 text-accent">
+              <Shield size={20} aria-hidden="true" />
+            </div>
             <div>
-              <label className="text-sm text-gray-400 block mb-2">
-                Panel ID *
-              </label>
+              <h2 className="font-semibold">Panel and inspector</h2>
+              <p className="text-sm text-muted">
+                Panel ID is required. Other fields are stored when registering a new panel.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <Field
+              label="Panel ID *"
+              htmlFor="panel-id"
+              error={fieldErrors.panelId}
+              hint="Used to look up an existing panel or register a new one."
+            >
               <input
+                id="panel-id"
                 required
+                maxLength={50}
                 value={panelId}
-                onChange={(e) => setPanelId(e.target.value)}
+                onChange={(event) => {
+                  setPanelId(event.target.value);
+                  setPanelLookup({ status: "idle", message: "" });
+                }}
+                onBlur={lookupPanel}
                 placeholder="e.g. ARM-2026-001"
                 disabled={loading}
-                className="w-full bg-[#07130f] border border-white/10 rounded-lg px-4 py-3 text-sm outline-none focus:border-emerald-500"
+                className={inputClassName(fieldErrors.panelId)}
               />
-            </div>
+            </Field>
 
-            <div>
-              <label className="text-sm text-gray-400 block mb-2">
-                Material
-              </label>
+            <Field label="Material" htmlFor="material">
               <select
+                id="material"
                 value={material}
-                onChange={(e) => setMaterial(e.target.value)}
-                disabled={loading}
-                className="w-full bg-[#07130f] border border-white/10 rounded-lg px-4 py-3 text-sm outline-none focus:border-emerald-500"
+                onChange={(event) => setMaterial(event.target.value)}
+                disabled={loading || panelLookup.status === "found"}
+                className={inputClassName(false)}
               >
-                <option value="Ceramic">Ceramic</option>
-                <option value="Composite">Composite</option>
-                <option value="Steel">Steel</option>
-                <option value="Polyethylene">Polyethylene</option>
-                <option value="Other">Other</option>
+                {MATERIALS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+                {material && !MATERIALS.includes(material) ? (
+                  <option value={material}>{material}</option>
+                ) : null}
               </select>
-            </div>
+            </Field>
 
-            <div>
-              <label className="text-sm text-gray-400 block mb-2">
-                Manufacturer
-              </label>
+            <Field label="Manufacturer" htmlFor="manufacturer">
               <input
+                id="manufacturer"
                 value={manufacturer}
-                onChange={(e) => setManufacturer(e.target.value)}
-                placeholder="Enter manufacturer"
-                disabled={loading}
-                className="w-full bg-[#07130f] border border-white/10 rounded-lg px-4 py-3 text-sm outline-none focus:border-emerald-500"
+                onChange={(event) => setManufacturer(event.target.value)}
+                placeholder="Manufacturer name"
+                disabled={loading || panelLookup.status === "found"}
+                className={inputClassName(false)}
               />
-            </div>
+            </Field>
 
-            <div>
-              <label className="text-sm text-gray-400 block mb-2">
-                Manufacture Date
-              </label>
+            <Field label="Manufacture date" htmlFor="manufacture-date">
               <input
+                id="manufacture-date"
                 type="date"
                 value={manufactureDate}
-                onChange={(e) => setManufactureDate(e.target.value)}
-                disabled={loading}
-                className="w-full bg-[#07130f] border border-white/10 rounded-lg px-4 py-3 text-sm outline-none focus:border-emerald-500"
+                onChange={(event) => setManufactureDate(event.target.value)}
+                disabled={loading || panelLookup.status === "found"}
+                className={inputClassName(false)}
               />
-            </div>
+            </Field>
 
             <div className="md:col-span-2">
-              <label className="text-sm text-gray-400 block mb-2">
-                Inspector Name
-              </label>
-              <input
-                value={inspectorName}
-                onChange={(e) => setInspectorName(e.target.value)}
-                placeholder="Enter inspector name"
-                disabled={loading}
-                className="w-full bg-[#07130f] border border-white/10 rounded-lg px-4 py-3 text-sm outline-none focus:border-emerald-500"
-              />
+              <Field
+                label="Inspector name"
+                htmlFor="inspector-name"
+                hint="Stored on the inspection record. Optional."
+              >
+                <input
+                  id="inspector-name"
+                  value={inspectorName}
+                  onChange={(event) => setInspectorName(event.target.value)}
+                  placeholder="Name of the inspecting officer"
+                  disabled={loading}
+                  className={inputClassName(false)}
+                />
+              </Field>
             </div>
           </div>
-        </section>
 
-        {/* Images */}
-        <section>
-          <h2 className="font-semibold mb-1">Surface Images</h2>
-          <p className="text-xs text-gray-500 mb-4">
-            Upload both images to create the inspection
+          {panelLookup.message ? (
+            <p
+              className={`mt-4 text-sm ${
+                panelLookup.status === "error" ? "text-danger" : "text-muted"
+              }`}
+            >
+              {panelLookup.status === "loading" ? (
+                <Loader2
+                  size={14}
+                  className="mr-2 inline animate-spin motion-reduce:animate-none"
+                />
+              ) : null}
+              {panelLookup.message}
+            </p>
+          ) : null}
+        </Card>
+
+        <div>
+          <h2 className="font-semibold">Surface images</h2>
+          <p className="mt-1 mb-4 text-sm text-muted">
+            Both images are required. Files stay on this device until you submit.
           </p>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <UploadBox
-              title="Front Surface"
-              description="Front-facing armour panel image"
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <ImageField
+              id="front-image"
+              title="Front"
+              description="Photograph of the front face of the panel."
               image={frontImage}
-              setter={setFrontImage}
+              disabled={loading}
+              error={fieldErrors.front}
+              onSelect={(event) =>
+                assignImage(event, frontImage, setFrontImage, "front")
+              }
+              onRemove={() => {
+                if (frontImage?.preview) URL.revokeObjectURL(frontImage.preview);
+                setFrontImage(null);
+              }}
             />
-
-            <UploadBox
-              title="Back Surface"
-              description="Rear-facing armour panel image"
+            <ImageField
+              id="back-image"
+              title="Back"
+              description="Photograph of the rear face of the panel."
               image={backImage}
-              setter={setBackImage}
+              disabled={loading}
+              error={fieldErrors.back}
+              onSelect={(event) =>
+                assignImage(event, backImage, setBackImage, "back")
+              }
+              onRemove={() => {
+                if (backImage?.preview) URL.revokeObjectURL(backImage.preview);
+                setBackImage(null);
+              }}
             />
           </div>
-        </section>
+        </div>
 
-        {/* Error */}
-        {error && (
-          <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-300">
-            <AlertCircle size={19} className="shrink-0" />
-            {error}
-          </div>
-        )}
+        {error ? <Alert title="Inspection did not finish">{error}</Alert> : null}
 
-        {/* Progress */}
-        {loading && (
-          <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4 text-sm text-emerald-300">
-            <Loader2 size={19} className="animate-spin" />
-            {message}
-          </div>
-        )}
+        {loading ? (
+          <Alert tone="ok" title="Working">
+            <span className="inline-flex items-center gap-2">
+              <Loader2
+                size={16}
+                className="animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+              {message}
+            </span>
+          </Alert>
+        ) : null}
 
-        {/* Success / Upload Result */}
-        {result && (
-          <div className="bg-[#10231b] border border-emerald-500/30 rounded-xl p-5">
-            <div className="flex items-center gap-2 text-emerald-400 font-semibold mb-4">
-              <CheckCircle2 size={20} />
-              Inspection record #{result.inspectionId}
+        {result ? (
+          <Card className="p-5">
+            <div className="flex flex-wrap items-center gap-2 text-accent">
+              <CheckCircle2 size={20} aria-hidden="true" />
+              <p className="font-semibold">Inspection #{result.inspectionId}</p>
+              <StatusBadge status={result.status} />
             </div>
+            <p className="mt-3 text-sm text-muted">Panel ID: {result.panelId}</p>
+            <ul className="mt-3 space-y-1 text-sm">
+              <li className={result.frontUploaded ? "text-accent" : "text-warning"}>
+                {result.frontUploaded ? "Front image uploaded" : "Front image not uploaded"}
+              </li>
+              <li className={result.backUploaded ? "text-accent" : "text-warning"}>
+                {result.backUploaded ? "Back image uploaded" : "Back image not uploaded"}
+              </li>
+            </ul>
+            {!loading && message ? (
+              <p className="mt-3 text-sm text-muted">{message}</p>
+            ) : null}
+          </Card>
+        ) : null}
 
-            <p className="text-sm text-gray-300 mb-3">
-              Panel ID: {result.panelId}
-            </p>
-
-            <div className="space-y-2 text-sm">
-              <p className={result.frontUploaded ? "text-emerald-400" : "text-yellow-400"}>
-                {result.frontUploaded ? "✓" : "○"} Front image uploaded
-              </p>
-              <p className={result.backUploaded ? "text-emerald-400" : "text-yellow-400"}>
-                {result.backUploaded ? "✓" : "○"} Back image uploaded
-              </p>
-            </div>
-
-            <p className="text-xs text-gray-500 mt-4">
-              Backend inspection status: {result.status}
-            </p>
-          </div>
-        )}
-
-        {/* Buttons */}
         <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold px-6 py-3 rounded-lg text-sm transition"
-          >
+          <Button type="submit" disabled={loading}>
             {loading ? (
               <>
-                <Loader2 size={18} className="animate-spin" />
-                Processing...
+                <Loader2
+                  size={16}
+                  className="animate-spin motion-reduce:animate-none"
+                />
+                Processing…
               </>
             ) : (
               <>
-                <Upload size={18} />
-                Create Inspection & Upload Images
+                <Upload size={16} />
+                Create inspection and upload images
               </>
             )}
-          </button>
+          </Button>
         </div>
-
       </form>
     </div>
   );
 }
 
 export default NewInspection;
-

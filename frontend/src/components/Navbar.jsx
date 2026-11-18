@@ -1,55 +1,74 @@
+import { Search } from "lucide-react";
+import { useState } from "react";
+import { MenuToggle } from "./Sidebar";
+import { Button } from "./ui";
 
-import {
-  Search,
-  Bell,
-  UserCircle,
-  ChevronDown,
-} from "lucide-react";
+function Navbar({
+  pageTitle,
+  onOpenNav,
+  onSearchSubmit,
+  apiStatus,
+}) {
+  const [query, setQuery] = useState("");
 
-function Navbar() {
   return (
-    <header className="h-[72px] bg-[#0c1b16] border-b border-emerald-900/40 flex items-center justify-between px-8">
+    <header className="sticky top-0 z-20 border-b border-line bg-forest-900/95 backdrop-blur">
+      <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
+        <MenuToggle onClick={onOpenNav} />
 
-      {/* Search */}
-      <div className="relative w-80">
-        <Search
-          size={18}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
-        />
-        <input
-          type="text"
-          placeholder="Search by Panel ID..."
-          className="w-full bg-[#14251e] border border-white/10 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white placeholder-gray-500 outline-none focus:border-emerald-500/60"
-        />
-      </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-ink">{pageTitle}</p>
+          <p className="hidden text-xs text-muted sm:block">
+            Live records from the inspection API
+          </p>
+        </div>
 
-      {/* Right Section */}
-      <div className="flex items-center gap-6">
-
-        {/* Notifications */}
-        <button className="relative text-gray-400 hover:text-emerald-400 transition">
-          <Bell size={21} />
-          <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center">
-            3
-          </span>
-        </button>
-
-        {/* Inspector Profile */}
-        <button className="flex items-center gap-3 text-left">
-          <UserCircle size={35} className="text-emerald-400" />
-
-          <div>
-            <p className="text-sm font-semibold text-white">
-              Inspector
-            </p>
-            <p className="text-xs text-gray-500">
-              Inspection Manager
-            </p>
+        <form
+          className="hidden min-w-0 max-w-md flex-1 md:block"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSearchSubmit(query);
+          }}
+        >
+          <label htmlFor="global-search" className="sr-only">
+            Search inspections
+          </label>
+          <div className="relative">
+            <Search
+              size={16}
+              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted"
+              aria-hidden="true"
+            />
+            <input
+              id="global-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search inspections by ID, panel, inspector, or status"
+              className="w-full rounded-lg border border-line bg-forest py-2 pr-3 pl-9 text-sm outline-none placeholder:text-muted/70 focus:border-accent"
+            />
           </div>
+        </form>
 
-          <ChevronDown size={16} className="text-gray-500" />
-        </button>
+        <Button
+          variant="secondary"
+          className="hidden sm:inline-flex"
+          onClick={() => onSearchSubmit(query)}
+        >
+          Find
+        </Button>
 
+        <p
+          className="hidden items-center gap-2 text-xs text-muted xl:flex"
+          title={apiStatus.label}
+        >
+          <span
+            className={`h-2 w-2 rounded-full ${
+              apiStatus.ok ? "bg-accent" : apiStatus.checking ? "bg-warning" : "bg-danger"
+            }`}
+            aria-hidden="true"
+          />
+          <span>{apiStatus.label}</span>
+        </p>
       </div>
     </header>
   );

@@ -2,18 +2,79 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
+export function checkHealth() {
+  return apiRequest("/health");
+}
+
+export async function getCurrentUser() {
+  let response;
+  try {
+    response = await apiFetch("/auth/me");
+  } catch {
+    throw new Error(
+      "Cannot connect to the backend. Please check that the FastAPI server is running."
+    );
+  }
+  if (response.status === 401) {
+    return null;
+  }
+  return readResponse(response);
+}
+
+export function signIn(email, password) {
+  return apiRequest("/auth/login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function signUp(email, password) {
+  return apiRequest("/auth/register", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function signOut() {
+  return apiRequest("/auth/logout", { method: "POST" });
+}
+
 // Common API request handler
 async function apiRequest(endpoint, options = {}) {
   let response;
 
   try {
-    response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+    response = await apiFetch(endpoint, options);
   } catch {
     throw new Error(
       "Cannot connect to the backend. Please check that the FastAPI server is running."
     );
   }
 
+  if (
+    response.status === 401 &&
+    !endpoint.startsWith("/auth/")
+  ) {
+    window.dispatchEvent(new Event("armourwatch:session-expired"));
+  }
+
+  return readResponse(response);
+}
+
+function apiFetch(endpoint, options = {}) {
+  return fetch(`${API_BASE_URL}${endpoint}`, {
+    credentials: "include",
+    ...options,
+  });
+}
+
+async function readResponse(response) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {

@@ -1,297 +1,184 @@
+import { FileText } from "lucide-react";
 
-import { useEffect, useState } from "react";
 import {
-  FileText,
-  ClipboardList,
-  CheckCircle,
-  Clock,
-  Download,
-  RefreshCw,
-  AlertCircle,
-} from "lucide-react";
-
+  Alert,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  LoadingBlock,
+  PageHeader,
+  RefreshButton,
+  StatusBadge,
+} from "../components/ui";
+import { dateRangeLabel, displayName, formatDateTime } from "../lib/format";
+import { useApiList } from "../hooks/useApiList";
 import { getInspections } from "../services/api";
 
-function Reports() {
-  const [inspections, setInspections] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const fetchInspections = async () => {
-    try {
-      setLoading(true);
-      setError("");
-
-      const data = await getInspections();
-      setInspections(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setError(err.message || "Unable to load report data.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchInspections();
-  }, []);
-
-  const completedCount = inspections.filter(
-    (item) => String(item.status).toLowerCase() === "completed"
+function countByStatus(inspections, status) {
+  return inspections.filter(
+    (item) => String(item.status || "").toLowerCase() === status
   ).length;
+}
 
-  const pendingCount = inspections.filter(
-    (item) => String(item.status).toLowerCase() === "pending"
-  ).length;
+function downloadCsv(inspections) {
+  const headers = [
+    "Inspection ID",
+    "Panel ID",
+    "Inspector",
+    "Inspection Date",
+    "Status",
+  ];
+  const rows = inspections.map((item) => [
+    item.id,
+    item.panel_id,
+    item.inspector_name || "",
+    item.inspection_date || "",
+    item.status || "",
+  ]);
+  const escapeCSV = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const csvContent = [
+    headers.map(escapeCSV).join(","),
+    ...rows.map((row) => row.map(escapeCSV).join(",")),
+  ].join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "armour-inspection-report.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
-  const otherCount = inspections.length - completedCount - pendingCount;
-
-  const formatDate = (date) => {
-    if (!date) return "—";
-
-    const parsedDate = new Date(date);
-
-    return Number.isNaN(parsedDate.getTime())
-      ? "—"
-      : parsedDate.toLocaleString();
-  };
-
-  const downloadReport = () => {
-    if (inspections.length === 0) return;
-
-    const headers = [
-      "Inspection ID",
-      "Panel ID",
-      "Inspector",
-      "Inspection Date",
-      "Status",
-    ];
-
-    const rows = inspections.map((item) => [
-      item.id,
-      item.panel_id,
-      item.inspector_name || "",
-      item.inspection_date || "",
-      item.status || "",
-    ]);
-
-    const escapeCSV = (value) =>
-      `"${String(value ?? "").replace(/"/g, '""')}"`;
-
-    const csvContent = [
-      headers.map(escapeCSV).join(","),
-      ...rows.map((row) => row.map(escapeCSV).join(",")),
-    ].join("\n");
-
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = "armour-inspection-report.csv";
-    link.click();
-
-    URL.revokeObjectURL(url);
-  };
-
-  const statusStyle = (status) => {
-    const value = String(status || "").toLowerCase();
-
-    if (value === "completed") {
-      return "bg-emerald-500/10 text-emerald-400";
-    }
-
-    if (value === "pending") {
-      return "bg-yellow-500/10 text-yellow-400";
-    }
-
-    return "bg-gray-500/10 text-gray-400";
-  };
+function Reports({ onOpenInspection }) {
+  const { data, loading, error, reload } = useApiList(getInspections);
+  const completedCount = countByStatus(data, "completed");
+  const pendingCount = countByStatus(data, "pending");
+  const otherCount = data.length - completedCount - pendingCount;
+  const range = dateRangeLabel(data, (item) => item.inspection_date);
 
   return (
-    <div className="min-h-screen bg-[#07130f] text-white p-6 md:p-8">
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Summary"
+        title="Reports"
+        description={`Figures are computed from current inspection API records. Date range: ${range}.`}
+        actions={
+          <>
+            <RefreshButton loading={loading} onClick={reload} />
+            <Button
+              onClick={() => downloadCsv(data)}
+              disabled={loading || data.length === 0}
+            >
+              Export CSV
+            </Button>
+          </>
+        }
+      />
 
-      {/* Heading */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">Reports</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            Inspection summaries and downloadable records.
-          </p>
-        </div>
+      {error ? (
+        <Alert title="Could not load report data">{error}</Alert>
+      ) : null}
 
-        <div className="flex gap-3">
-          <button
-            onClick={fetchInspections}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[#263b31] bg-[#11231a] hover:bg-[#193326] text-sm disabled:opacity-50"
-          >
-            <RefreshCw
-              size={16}
-              className={loading ? "animate-spin" : ""}
-            />
-            Refresh
-          </button>
-
-          <button
-            onClick={downloadReport}
-            disabled={loading || inspections.length === 0}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Download size={16} />
-            Export CSV
-          </button>
-        </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["Total inspections", loading ? "—" : data.length, "All returned records"],
+          ["Completed", loading ? "—" : completedCount, "Status equals completed"],
+          ["Pending", loading ? "—" : pendingCount, "Status equals pending"],
+          ["Other statuses", loading ? "—" : otherCount, "Any other recorded value"],
+        ].map(([title, value, hint]) => (
+          <Card key={title} className="p-5">
+            <p className="text-sm text-muted">{title}</p>
+            <p className="mt-2 text-3xl font-semibold">{value}</p>
+            <p className="mt-2 text-xs text-muted">{hint}</p>
+          </Card>
+        ))}
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6 flex gap-3">
-          <AlertCircle size={20} className="text-red-400" />
-          <div>
-            <p className="text-red-400 font-medium">
-              Could not load report data
-            </p>
-            <p className="text-gray-400 text-sm mt-1">{error}</p>
-          </div>
-        </div>
-      )}
+      <Card className="p-5">
+        <h2 className="font-semibold">Unavailable in this API</h2>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted">
+          <li>PDF report export is not provided. CSV download lists the fields above.</li>
+          <li>Damage class, annotated photos, and health scores are not returned.</li>
+          <li>Inspector performance rankings cannot be verified beyond names on records.</li>
+        </ul>
+      </Card>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-
-        <div className="bg-[#102019] border border-[#263b31] rounded-xl p-5">
-          <div className="flex justify-between items-center mb-4">
-            <p className="text-gray-400 text-sm">Total Inspections</p>
-            <ClipboardList size={21} className="text-emerald-400" />
-          </div>
-          <h2 className="text-3xl font-bold">
-            {loading ? "—" : inspections.length}
-          </h2>
-          <p className="text-gray-500 text-xs mt-2">All registered records</p>
-        </div>
-
-        <div className="bg-[#102019] border border-[#263b31] rounded-xl p-5">
-          <div className="flex justify-between items-center mb-4">
-            <p className="text-gray-400 text-sm">Completed</p>
-            <CheckCircle size={21} className="text-emerald-400" />
-          </div>
-          <h2 className="text-3xl font-bold text-emerald-400">
-            {loading ? "—" : completedCount}
-          </h2>
-          <p className="text-gray-500 text-xs mt-2">Completed inspections</p>
-        </div>
-
-        <div className="bg-[#102019] border border-[#263b31] rounded-xl p-5">
-          <div className="flex justify-between items-center mb-4">
-            <p className="text-gray-400 text-sm">Pending</p>
-            <Clock size={21} className="text-yellow-400" />
-          </div>
-          <h2 className="text-3xl font-bold text-yellow-400">
-            {loading ? "—" : pendingCount}
-          </h2>
-          <p className="text-gray-500 text-xs mt-2">Awaiting completion</p>
-        </div>
-
-        <div className="bg-[#102019] border border-[#263b31] rounded-xl p-5">
-          <div className="flex justify-between items-center mb-4">
-            <p className="text-gray-400 text-sm">Other Statuses</p>
-            <FileText size={21} className="text-blue-400" />
-          </div>
-          <h2 className="text-3xl font-bold text-blue-400">
-            {loading ? "—" : otherCount}
-          </h2>
-          <p className="text-gray-500 text-xs mt-2">Other recorded statuses</p>
-        </div>
-
-      </div>
-
-      {/* Report Table */}
-      <div className="bg-[#102019] border border-[#263b31] rounded-xl overflow-hidden">
-
-        <div className="p-5 border-b border-[#263b31]">
-          <h2 className="font-semibold">Inspection Report</h2>
-          <p className="text-gray-500 text-sm mt-1">
-            Overview of registered inspection records.
-          </p>
-        </div>
-
+      <Card>
+        <CardHeader
+          title="Inspection report table"
+          description="Same fields as the inspections API: id, panel_id, inspector_name, inspection_date, status."
+        />
         {loading ? (
-          <div className="p-12 text-center">
-            <RefreshCw
-              size={28}
-              className="animate-spin text-emerald-400 mx-auto mb-3"
-            />
-            <p className="text-gray-400 text-sm">Loading report data...</p>
-          </div>
-        ) : inspections.length === 0 ? (
-          <div className="p-12 text-center">
-            <FileText
-              size={36}
-              className="text-gray-600 mx-auto mb-3"
-            />
-            <p className="text-gray-300 font-medium">
-              No report records available
-            </p>
-            <p className="text-gray-500 text-sm mt-1">
-              Inspection records will appear here when available.
-            </p>
-          </div>
+          <LoadingBlock label="Loading report data…" />
+        ) : data.length === 0 ? (
+          <EmptyState
+            icon={FileText}
+            title="No report records available"
+            description="Summaries appear when at least one inspection exists."
+          />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-[#0b1912] text-gray-400 text-xs uppercase tracking-wider">
-                  <th className="px-5 py-4 font-medium">Inspection ID</th>
-                  <th className="px-5 py-4 font-medium">Panel ID</th>
-                  <th className="px-5 py-4 font-medium">Inspector</th>
-                  <th className="px-5 py-4 font-medium">Date</th>
-                  <th className="px-5 py-4 font-medium">Status</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {inspections.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="border-t border-[#263b31] hover:bg-[#15291e] transition"
-                  >
-                    <td className="px-5 py-4 text-sm text-emerald-400">
-                      #{item.id}
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-white">
-                      {item.panel_id || "—"}
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-gray-300">
-                      {item.inspector_name || "Not specified"}
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-gray-400">
-                      {formatDate(item.inspection_date)}
-                    </td>
-
-                    <td className="px-5 py-4">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium capitalize ${statusStyle(item.status)}`}
-                      >
-                        {item.status || "Unknown"}
-                      </span>
-                    </td>
+          <>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-[720px] w-full text-left text-sm">
+                <thead className="bg-forest-900 text-xs tracking-wide text-muted uppercase">
+                  <tr>
+                    <th className="px-5 py-3 font-medium">Inspection ID</th>
+                    <th className="px-5 py-3 font-medium">Panel ID</th>
+                    <th className="px-5 py-3 font-medium">Inspector</th>
+                    <th className="px-5 py-3 font-medium">Date</th>
+                    <th className="px-5 py-3 font-medium">Status</th>
+                    <th className="px-5 py-3 font-medium">
+                      <span className="sr-only">Open</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {data.map((item) => (
+                    <tr key={item.id} className="border-t border-line">
+                      <td className="px-5 py-3 font-mono text-accent">#{item.id}</td>
+                      <td className="px-5 py-3">{item.panel_id || "—"}</td>
+                      <td className="px-5 py-3 text-muted">
+                        {displayName(item.inspector_name)}
+                      </td>
+                      <td className="px-5 py-3 text-muted">
+                        {formatDateTime(item.inspection_date)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <StatusBadge status={item.status} />
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <Button
+                          variant="ghost"
+                          className="px-2 py-1"
+                          onClick={() => onOpenInspection(item)}
+                        >
+                          Open
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ul className="divide-y divide-line md:hidden">
+              {data.map((item) => (
+                <li key={item.id} className="space-y-2 px-5 py-4">
+                  <div className="flex items-center justify-between">
+                    <p className="font-mono text-sm text-accent">#{item.id}</p>
+                    <StatusBadge status={item.status} />
+                  </div>
+                  <p className="text-sm">{item.panel_id}</p>
+                  <p className="text-xs text-muted">
+                    {displayName(item.inspector_name)} ·{" "}
+                    {formatDateTime(item.inspection_date)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
-      </div>
-
-      <p className="text-gray-500 text-xs mt-4">
-        Report figures are calculated from the inspection records returned by the backend.
-      </p>
+      </Card>
     </div>
   );
 }
