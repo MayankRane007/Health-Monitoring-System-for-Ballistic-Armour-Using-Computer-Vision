@@ -1,6 +1,34 @@
+
+# Python
 .venv/
-.env
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Node.js
 node_modules/
 frontend/dist/
+
+# Uploaded inspection images
+backend/uploads/front/*
+backend/uploads/back/*
+
+# Generated processing results
+backend/uploads/processed/*
+backend/uploads/inspection_results/*
+
+# Keep upload folders in Git
+!backend/uploads/front/.gitkeep
+!backend/uploads/back/.gitkeep
+!backend/uploads/processed/.gitkeep
+!backend/uploads/inspection_results/.gitkeep
+
+# IDE and operating system
+.vscode/
+.DS_Store
+Thumbs.db
